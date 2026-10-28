@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.layout.VBox?>
+
+<!-- Welcome screen, shown after a successful login -->
+<VBox alignment="CENTER" prefWidth="320" prefHeight="240"
+      xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml"
+      fx:controller="org.example.WelcomeController">
+
+    <Label fx:id="welcomeLabel" text="Welcome!" style="-fx-font-size: 20px;"/>
+</VBox>
