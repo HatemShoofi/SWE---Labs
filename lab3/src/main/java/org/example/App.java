@@ -14,8 +14,8 @@ import java.util.Optional;
 /**
  * Main JavaFX class.
  * Reads n and t from the command line, loads the valid users,
- * opens the login window, and switches to the welcome screen
- * after a successful login.
+ * creates the shared AttemptTracker, opens the login window,
+ * and switches to the welcome screen after a successful login.
  */
 public class App extends Application {
 
@@ -34,19 +34,26 @@ public class App extends Application {
     /** t: how long (seconds) an email stays blocked. */
     private static int blockSeconds;
 
+    /** Shared by all login threads: counts failures and blocks emails. */
+    private static AttemptTracker tracker;
+
     /**
      * Called by JavaFX when the app starts.
      * 1. Reads and checks n and t (asks the user if they're invalid).
-     * 2. Reads the file into an ArrayList of valid users.
-     * 3. Shows the login screen.
+     * 2. Creates the shared AttemptTracker.
+     * 3. Reads the file into an ArrayList of valid users.
+     * 4. Shows the login screen.
      */
     @Override
     public void start(Stage primaryStage) throws IOException {
-        // NEW: read n and t before opening any screen
+        // Read n and t before opening any screen
         List<String> args = getParameters().getRaw();
         maxFailures  = readArg(args, 0, "n (max wrong logins)");
         blockSeconds = readArg(args, 1, "t (block time in seconds)");
         System.out.println("n = " + maxFailures + ", t = " + blockSeconds);
+
+        // One tracker for the whole program (blocking is per email, not per window)
+        tracker = new AttemptTracker(maxFailures, blockSeconds);
 
         repository = new UserRepository(USERS_FILE);
 
@@ -64,6 +71,11 @@ public class App extends Application {
     /** @return the repository with the valid users */
     public static UserRepository getRepository() {
         return repository;
+    }
+
+    /** @return the shared attempt tracker */
+    public static AttemptTracker getTracker() {
+        return tracker;
     }
 
     /** @return n */
@@ -96,7 +108,7 @@ public class App extends Application {
         }
     }
 
-    // ---------- Argument checking (NEW in Lab 3) ----------
+    // ---------- Argument checking ----------
 
     /**
      * Returns args[index] if it is a whole number >= 1.
