@@ -54,6 +54,20 @@ public class UserRepository {
         return false;
     }
 
+    /**
+     * NEW in Lab 3: only emails that exist are tracked for blocking.
+     *
+     * @return true if a valid user has this email
+     */
+    public boolean emailExists(String username) {
+        for (User user : users) {
+            if (user.GetUsername().equals(username)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** @return the list of valid users */
     public ArrayList<User> getUsers() {
         return users;
