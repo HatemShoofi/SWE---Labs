@@ -10,17 +10,24 @@ import javafx.stage.Stage;
 import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * Main JavaFX class.
  * Reads n and t from the command line, loads the valid users,
- * creates the shared AttemptTracker, opens the login window,
- * and switches to the welcome screen after a successful login.
+ * creates the shared AttemptTracker and the failure queue, starts
+ * the two FailureWorkers, and opens the login window.
+ * When the window is closed, it stops every background thread.
  */
 public class App extends Application {
 
     /** The input file with all users (valid and invalid). */
     private static final String USERS_FILE = "Users.txt";
+
+    /** How many FailureWorker threads consume the failure queue. */
+    private static final int FAILURE_WORKERS = 2;
 
     /** The main window. We keep it so we can change its scene later. */
     private static Stage stage;
@@ -37,10 +44,16 @@ public class App extends Application {
     /** Shared by all login threads: counts failures and blocks emails. */
     private static AttemptTracker tracker;
 
+    /** LoginTask puts wrong-password events here; FailureWorkers take them. */
+    private static BlockingQueue<FailedAttempt> failureQueue;
+
+    /** Every background thread we started, so we can stop them on close. */
+    private static final List<Thread> backgroundThreads = new CopyOnWriteArrayList<>();
+
     /**
      * Called by JavaFX when the app starts.
      * 1. Reads and checks n and t (asks the user if they're invalid).
-     * 2. Creates the shared AttemptTracker.
+     * 2. Creates the tracker and the queue, starts the FailureWorkers.
      * 3. Reads the file into an ArrayList of valid users.
      * 4. Shows the login screen.
      */
@@ -55,17 +68,54 @@ public class App extends Application {
         // One tracker for the whole program (blocking is per email, not per window)
         tracker = new AttemptTracker(maxFailures, blockSeconds);
 
+        // The queue between LoginTask (producer) and FailureWorkers (consumers)
+        failureQueue = new LinkedBlockingQueue<>();
+        for (int i = 1; i <= FAILURE_WORKERS; i++) {
+            FailureWorker worker = new FailureWorker("FailureWorker-" + i, failureQueue, tracker);
+            backgroundThreads.add(worker);
+            worker.start();
+        }
+
         repository = new UserRepository(USERS_FILE);
 
         stage = primaryStage;
         stage.setTitle("Users Login");
 
-        // Clicking X closes the window and ends the program
+        // Clicking X closes the window and ends the program (see stop())
         stage.setOnCloseRequest(event -> Platform.exit());
 
         FXMLLoader loader = new FXMLLoader(App.class.getResource("login.fxml"));
         stage.setScene(new Scene(loader.load()));
         stage.show();
+    }
+
+    /**
+     * Called by JavaFX after the window closes (Platform.exit()).
+     * Interrupts every background thread: sleeping/waiting threads get
+     * an InterruptedException and end. They are also daemon threads,
+     * so none of them can keep the program running.
+     */
+    @Override
+    public void stop() {
+        for (Thread thread : backgroundThreads) {
+            thread.interrupt();
+        }
+        System.out.println("All background threads stopped. Bye.");
+    }
+
+    /**
+     * Starts a task in a new daemon thread and remembers it,
+     * so stop() can interrupt it if the window is closed.
+     *
+     * @param task what the thread should run
+     * @param name thread name (helps when debugging)
+     */
+    public static void startBackground(Runnable task, String name) {
+        backgroundThreads.removeIf(t -> !t.isAlive());   // forget finished threads
+        Thread thread = new Thread(task, name);
+        thread.setDaemon(true);
+        backgroundThreads.add(thread);
+        thread.start();
     }
 
     /** @return the repository with the valid users */
@@ -76,6 +126,11 @@ public class App extends Application {
     /** @return the shared attempt tracker */
     public static AttemptTracker getTracker() {
         return tracker;
+    }
+
+    /** @return the queue LoginTask uses to send wrong-password events */
+    public static BlockingQueue<FailedAttempt> getFailureQueue() {
+        return failureQueue;
     }
 
     /** @return n */
